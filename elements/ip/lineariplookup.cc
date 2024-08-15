@@ -23,6 +23,12 @@
 #include <click/ipaddress.hh>
 #include <click/straccum.hh>
 #include <click/error.hh>
+#include <click/args.hh>
+
+#include <iostream>
+#include <fstream>
+#include <sstream>
+using namespace std;
 CLICK_DECLS
 
 LinearIPLookup::LinearIPLookup()
@@ -42,6 +48,98 @@ LinearIPLookup::initialize(ErrorHandler *)
     _last_addr2 = _last_addr;
 #endif
     return 0;
+}
+
+int LinearIPLookup::configure(Vector<String> &conf, ErrorHandler *errh)
+{
+    if (Args(conf, this, errh)
+    .read("LOOKUP_TABLE", _lookup_table)
+        .consume() < 0)
+    {
+        return -1;
+    }
+
+    printf("table: %d\n", _lookup_table);
+
+    read_from_file(_lookup_table);
+    printf("size: %d\n", _t.size());
+    return 0;
+}
+
+int LinearIPLookup::save_to_file(uint64_t size) {
+    std::string file_name = "saved_vector" + std::to_string(size) + ".bin";
+    
+    ofstream fout(file_name, ios::out | ios::binary);
+    fout<<_t.size()<<endl;
+    for (int i = 0; i < _t.size(); i++) {
+        fout<<_t[i].addr<<endl;
+        fout<<_t[i].mask<<endl;
+        fout<<_t[i].gw<<endl;
+        fout<<_t[i].port<<endl;
+        fout<<_t[i].extra<<endl;
+    }
+    fout.close();
+	return 0;
+}
+
+int LinearIPLookup::read_from_file(uint8_t table) {
+    std::string file_name;
+
+    switch(table) {
+        case 0:
+            file_name = "../saved_vector100.bin";
+            break;
+        case 1:
+            file_name = "../saved_vector1000.bin";
+            break;
+        case 2:
+            file_name = "../saved_vector10000.bin";
+            break;
+        case 3:
+            file_name = "../saved_vector50000.bin";
+            break;
+        case 4:
+            file_name = "../saved_vector100000.bin";
+            break;
+        case 5:
+            file_name = "../saved_vector1000000.bin";
+            break;
+        default:
+            file_name = "../saved_vector100.bin";
+            break;
+    }
+    
+    std::ifstream fin(file_name, std::ios::in | std::ios::binary);
+    std::string line;
+    std:getline(fin, line);
+    uint32_t size = std::stoul(line);
+    _t.resize(size);
+    for(int i = 0; i < size; i++) {
+        std::getline(fin, line);
+        uint32_t addr = std::stoul(line);
+        _t[i].addr = addr;
+
+        std::getline(fin, line);
+        uint32_t mask = std::stoul(line);
+        _t[i].mask = mask;
+
+        std::getline(fin, line);
+        uint32_t gw = std::stoul(line);
+        _t[i].gw = gw;
+
+        std::getline(fin, line);
+        uint32_t port = std::stoul(line);
+        _t[i].port = port;
+
+        std::getline(fin, line);
+        uint32_t extra = std::stoul(line);
+        _t[i].extra = extra;
+
+    }
+    fin.close();
+
+    return 0;
+
 }
 
 bool
@@ -109,7 +207,7 @@ LinearIPLookup::add_route(const IPRoute &r, bool allow_replace, IPRoute* replace
 		return -EEXIST;
 	    _t[i].gw = r.gw;
 	    _t[i].port = r.port;
-	    check();
+	    // check();
 	    return 0;
 	}
 
@@ -140,7 +238,28 @@ LinearIPLookup::add_route(const IPRoute &r, bool allow_replace, IPRoute* replace
     _last_addr2 = IPAddress();
 #endif
 
-    check();
+    // check();
+
+    // Saving the structure into files to load it faster later
+     if (_t.size() == 100) {
+        save_to_file(100);
+     }
+     if (_t.size() == 1000) {
+         save_to_file(1000);
+     }
+     if (_t.size() == 10000) {
+         save_to_file(10000);
+     }
+     if (_t.size() == 50000) {
+         save_to_file(50000);
+     }
+     if (_t.size() == 100000) {
+         save_to_file(100000);
+     }
+     if (_t.size() == 1000000) {
+         save_to_file(1000000);
+     }
+
     return 0;
 }
 
@@ -169,7 +288,7 @@ LinearIPLookup::remove_route(const IPRoute& route, IPRoute* old_route, ErrorHand
 #ifdef IP_RT_CACHE2
 	    _last_addr2 = IPAddress();
 #endif
-	    check();
+	    // check();
 	    return 0;
 	}
     return -ENOENT;
@@ -178,7 +297,7 @@ LinearIPLookup::remove_route(const IPRoute& route, IPRoute* old_route, ErrorHand
 int
 LinearIPLookup::lookup_entry(IPAddress a) const
 {
-    for (int i = 0; i < _t.size(); i++)
+    for (int i = 0; i < _t.size(); i++){
 	if (_t[i].contains(a)) {
 	    int found = i;
 	    for (int j = _t[i].extra; j < _t.size(); j++)
@@ -186,6 +305,7 @@ LinearIPLookup::lookup_entry(IPAddress a) const
 		    found = j;
 	    return found;
 	}
+    }
     return -1;
 }
 
